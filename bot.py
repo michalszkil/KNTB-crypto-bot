@@ -4,6 +4,9 @@ from keys import api_key, private_key
 import pandas as pd
 import time
 from time import sleep
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.orm import sessionmaker, scoped_session
+from datetime import datetime
 
 def get_balance():
     with open('balance.json', 'r') as f:
@@ -41,6 +44,14 @@ client = Client(api_key,
                 private_key,
                  testnet=True) 
 
+engine = create_engine('sqlite:///' + 'transactions.db') 
+metadata = MetaData(engine)
+metadata.reflect()
+
+session_factory = sessionmaker(bind=engine)
+session_scoped_factory = scoped_session(session_factory)
+session = session_scoped_factory()
+
 print(client.get_account()['balances'])
 
 symbol = 'BTCUSDT'
@@ -65,10 +76,11 @@ try:
                     quantity = round(order_value/current_price, 4)
                 )
                 transactions = get_transactions()
-                transactions[time.time()] = {'Type': 'SELL', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4)}
+                transactions[time.time()] = {'Type': 'SELL', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4), 'Price': current_price}
                 dump_transactions(transactions)
                 dump_balance(client.get_account()['balances'])
-                print({'Type': 'SELL', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4)})
+                print('Type: ' + 'SELL' + ' Symbol: ' + symbol + ' Quantity: ' + str(round(order_value/current_price, 4)) + ' Price: ' + str(current_price) + 
+                ' Time: ' + str(datetime.now()))
             except:
                 print('Failed to create a SELL order')
             lower_trigger, upper_trigger = get_current_position(current_price, grid_lines)
@@ -81,16 +93,27 @@ try:
                     quantity = round(order_value/current_price, 4)
                 )
                 transactions = get_transactions()
-                transactions[time.time()] = {'Type': 'BUY', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4)}
+                transactions[time.time()] = {'Type': 'BUY', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4), 'Price': current_price}
                 dump_transactions(transactions)
                 dump_balance(client.get_account()['balances'])
-                print({'Type': 'BUY', 'Symbol': symbol, 'Quantity': round(order_value/current_price, 4)})
+                print('Type: ' + 'BUY' + ' Symbol: ' + symbol + ' Quantity: ' + str(round(order_value/current_price, 4)) + ' Price: ' + str(current_price) + 
+                ' Time: ' + str(datetime.now()))
             except:
                 print('Failed to create a BUY order')
             lower_trigger, upper_trigger = get_current_position(current_price, grid_lines)
         else:
-            print('No transaction. Current price = ' + str(current_price))
+            transactions = get_transactions()
+            transactions[time.time()] = {'Type': 'NO TRANSACTION', 'Symbol': symbol, 'Price': current_price}
+            dump_transactions(transactions)
+            print('No transaction. Current price = ' + str(current_price) + 
+                ' Time: ' + str(datetime.now()))
         sleep(60)
 except KeyboardInterrupt:
     dump_balance(client.get_account()['balances'])
+    with engine.begin() as connection:
+        pd.read_json('transactions.json').transpose().to_sql('transactions', con=connection, if_exists='append')
+
+    print('Zapis do bazy danych - start')
+    session.commit()
+    print('Zapis do bazy danych - koniec')
     print('Bot stopped working')
